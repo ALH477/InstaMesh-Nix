@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+LABEL maintainer="DeMoD (@DeMoDLLC)"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /workspace
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        git wget vim build-essential ninja-build \
+        libegl1-mesa-dev libglib2.0-0 libgl1-mesa-glx && \
+    rm -rf /var/lib/apt/lists/*
+
+# Miniconda (matches common InstantMesh setups)
+RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \
+    bash miniconda.sh -b -p /opt/miniconda3 && \
+    rm miniconda.sh && \
+    /opt/miniconda3/bin/conda init bash
+
+ENV PATH="/opt/miniconda3/bin:${PATH}"
+
+RUN conda create -n instantmesh python=3.10 -y && \
+    conda clean --all -y
+
+SHELL ["conda", "run", "-n", "instantmesh", "/bin/bash", "-c"]
+
+RUN conda install -y ninja cuda -c nvidia/label/cuda-12.4.1 && \
+    conda clean --all -y
+
+RUN pip install --no-cache-dir \
+    torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
+    --index-url https://download.pytorch.org/whl/cu121 && \
+    pip install --no-cache-dir xformers==0.0.22.post7 triton
+
+RUN git clone --depth 1 https://github.com/TencentARC/InstantMesh.git /workspace/InstantMesh && \
+    cd /workspace/InstantMesh && \
+    pip install --no-cache-dir -r requirements.txt
+
+WORKDIR /workspace/InstantMesh
+
+VOLUME ["/workspace/models"]
+
+EXPOSE 7860
+
+CMD ["conda", "run", "-n", "instantmesh", "python", "app.py"]
